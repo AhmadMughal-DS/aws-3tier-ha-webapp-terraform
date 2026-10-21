@@ -7,8 +7,8 @@ This folder documents the architecture for the recording/walkthrough.
 
 ## Lucid diagram
 
-- **View:** https://lucid.app/lucidchart/4f14bceb-8e0e-4e8b-be22-96aff57d4184/view
-- **Edit:** https://lucid.app/lucidchart/4f14bceb-8e0e-4e8b-be22-96aff57d4184/edit
+- **Master Lucid document (all 30 diagrams, icon style):** https://lucid.app/lucidchart/3da75ce3-ea66-4296-81b3-00d20a60435b/edit
+- This project is **page 1** of that document.
 
 (Created via the Lucid connector. Open to refine styling / add AWS icons before recording.)
 
