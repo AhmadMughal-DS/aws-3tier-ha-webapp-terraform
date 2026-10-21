@@ -1,23 +1,15 @@
 # AWS 3-Tier Highly-Available Web Application (Terraform)
 
-> Production-style, multi-AZ 3-tier architecture on AWS, fully provisioned with Terraform.
-> **Author:** Muhammad Ahmad · **IaC:** Terraform · **Cloud:** AWS
+> Production-grade, modular, multi-AZ 3-tier architecture on AWS — remote state, dev/prod environments, CI with security scanning, and least-privilege security throughout.
+> **Author:** Muhammad Ahmad · **IaC:** Terraform (modular) · **Cloud:** AWS
 
-![Terraform](https://img.shields.io/badge/Terraform-1.5%2B-7B42BC?logo=terraform&logoColor=white)
+![Terraform CI](https://github.com/AhmadMughal-DS/aws-3tier-ha-webapp-terraform/actions/workflows/terraform.yml/badge.svg)
+![Terraform](https://img.shields.io/badge/Terraform-1.6%2B-7B42BC?logo=terraform&logoColor=white)
 ![AWS](https://img.shields.io/badge/AWS-VPC%20%7C%20ALB%20%7C%20ASG%20%7C%20RDS-FF9900?logo=amazonaws&logoColor=white)
+![Security](https://img.shields.io/badge/scanned-tfsec%20%7C%20checkov-success)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
-
-## 📌 Overview
-
-This project deploys a classic, resilient **3-tier web application** across **two Availability Zones** for high availability:
-
-- **Web / Presentation tier** — an internet-facing **Application Load Balancer** distributing traffic to an **Auto Scaling Group** of EC2 instances running nginx.
-- **Application tier** — EC2 instances live in **private subnets** (no public IPs); outbound internet access goes through a **NAT Gateway**.
-- **Data tier** — an **Amazon RDS for MySQL** instance with **Multi-AZ** failover, isolated in dedicated private DB subnets.
-
-Security is layered so each tier only accepts traffic from the tier in front of it.
 
 ## 🏗️ Architecture
 
@@ -26,83 +18,80 @@ Security is layered so each tier only accepts traffic from the tier in front of 
 ```mermaid
 flowchart TB
     User([🌐 Internet User])
-
-    subgraph VPC["AWS VPC — 10.0.0.0/16"]
+    subgraph VPC["AWS VPC — multi-AZ"]
         IGW[Internet Gateway]
-
         subgraph Public["Public Subnets · 2 AZs"]
-            ALB[Application<br/>Load Balancer]
-            NAT[NAT Gateway]
+            ALB[Application LB<br/>+ access logs]
+            NAT1[NAT GW AZ-a]
+            NAT2[NAT GW AZ-b]
         end
-
         subgraph App["Private App Subnets · 2 AZs"]
             EC2A[EC2 Web · AZ-a]
             EC2B[EC2 Web · AZ-b]
         end
-
         subgraph Data["Private DB Subnets · 2 AZs"]
             RDS[(RDS MySQL<br/>Multi-AZ)]
+            SM[Secrets Manager]
         end
     end
-
-    User -->|HTTP :80| ALB
+    User -->|HTTP/HTTPS| ALB
     ALB --> EC2A
     ALB --> EC2B
-    EC2A -->|:3306| RDS
-    EC2B -->|:3306| RDS
-    EC2A -.outbound.-> NAT
-    EC2B -.outbound.-> NAT
-    NAT --> IGW
+    EC2A -->|:3306 TLS| RDS
+    EC2B -->|:3306 TLS| RDS
+    RDS -.credentials.-> SM
+    EC2A -.egress.-> NAT1
+    EC2B -.egress.-> NAT2
+    NAT1 --> IGW
+    NAT2 --> IGW
 ```
 
-## 🧱 What Terraform provisions
+## 📦 Module layout
 
-| Layer | Resources |
-|-------|-----------|
-| Networking | VPC, Internet Gateway, 2× public / 2× app / 2× DB subnets, NAT Gateway, route tables |
-| Security | 3 security groups (ALB → Web → DB) with least-privilege rules |
-| Load balancing | Application Load Balancer, target group, HTTP listener, health checks |
-| Compute | Launch Template (Amazon Linux 2023 + IMDSv2), Auto Scaling Group, CPU target-tracking policy |
-| Database | RDS MySQL 8.0, Multi-AZ, encrypted storage, 7-day backups, private DB subnet group |
+```
+terraform/
+├── backend.tf                # remote S3 state + DynamoDB lock (bootstrap notes)
+├── main.tf                   # composes the modules
+├── variables.tf              # typed, validated inputs
+├── environments/
+│   ├── dev.tfvars
+│   └── prod.tfvars
+└── modules/
+    ├── network/              # VPC, 2×(public/app/db) subnets, 2 NAT GW (HA), flow logs
+    ├── security/             # ALB → Web → DB security groups (least privilege)
+    ├── compute/              # ALB (access logs, HTTPS-ready), launch template, ASG, autoscaling
+    └── database/             # RDS Multi-AZ, Secrets Manager, enhanced monitoring, alarms
+```
+
+## ✨ Production features
+
+- **High availability** — resources span 2 AZs, with **one NAT gateway per AZ**.
+- **Secrets** — the DB password is generated and stored in **AWS Secrets Manager** (never in code/state as plaintext input).
+- **Encryption** — encrypted EBS and RDS storage; **TLS enforced** on RDS (`require_secure_transport`).
+- **Observability** — VPC **flow logs**, RDS **enhanced monitoring** + **Performance Insights**, CloudWatch **alarms**.
+- **Hardening** — IMDSv2 required, ALB **access logs** to S3, `drop_invalid_header_fields`, prod **deletion protection**.
+- **CI** — GitHub Actions runs `fmt`, `validate`, **TFLint**, **tfsec**, and **Checkov** on every PR.
 
 ## 🚀 Deploy
 
-**Prerequisites:** Terraform ≥ 1.5, AWS credentials configured (`aws configure`).
-
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # edit values as needed
-
-# Provide the DB password securely (do not commit it)
-export TF_VAR_db_password='YourStrongPassword123!'
-
 terraform init
-terraform plan
-terraform apply
+terraform plan  -var-file=environments/dev.tfvars
+terraform apply -var-file=environments/dev.tfvars     # or prod.tfvars
 ```
 
-When the apply finishes, open the `application_url` output in a browser — refresh a few times and you'll see requests served by different instances / AZs.
-
-```bash
-terraform output application_url
-```
+> Remote state: bootstrap an S3 bucket + DynamoDB lock table, then uncomment `backend.tf` and run `terraform init -migrate-state`.
 
 ## 🧹 Clean up
 
 ```bash
-terraform destroy
+terraform destroy -var-file=environments/dev.tfvars
 ```
 
 ## 💰 Cost note
 
-Uses small/`t3.micro`-class resources, but **ALB, NAT Gateway, and RDS Multi-AZ are not free-tier** and bill hourly. Run `terraform destroy` when you're done to avoid charges.
-
-## 🔐 Production hardening (next steps)
-
-- Store the DB password in **AWS Secrets Manager** instead of a variable.
-- Add an **HTTPS listener** with an ACM certificate and redirect HTTP → HTTPS.
-- Restrict ALB ingress to a WAF / known CIDRs.
-- Enable **RDS enhanced monitoring** and deletion protection.
+ALB, NAT gateways (×2), and RDS Multi-AZ bill hourly and are **not free-tier**. Use `dev.tfvars` (single-AZ DB) for cheap demos and `destroy` when done.
 
 ---
 

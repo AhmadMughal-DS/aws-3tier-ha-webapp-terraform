@@ -1,25 +1,30 @@
 output "application_url" {
   description = "Public URL of the load-balanced web application"
-  value       = "http://${aws_lb.this.dns_name}"
+  value       = "http://${module.compute.alb_dns_name}"
 }
 
 output "alb_dns_name" {
-  description = "DNS name of the Application Load Balancer"
-  value       = aws_lb.this.dns_name
+  description = "ALB DNS name"
+  value       = module.compute.alb_dns_name
 }
 
 output "vpc_id" {
-  description = "ID of the created VPC"
-  value       = aws_vpc.this.id
+  description = "VPC ID"
+  value       = module.network.vpc_id
 }
 
 output "autoscaling_group_name" {
-  description = "Name of the web tier Auto Scaling Group"
-  value       = aws_autoscaling_group.web.name
+  description = "Web tier Auto Scaling Group"
+  value       = module.compute.asg_name
+}
+
+output "db_secret_arn" {
+  description = "Secrets Manager ARN for the database credentials"
+  value       = module.database.secret_arn
 }
 
 output "db_endpoint" {
-  description = "RDS endpoint (host:port)"
-  value       = aws_db_instance.this.endpoint
+  description = "RDS endpoint"
+  value       = module.database.endpoint
   sensitive   = true
 }

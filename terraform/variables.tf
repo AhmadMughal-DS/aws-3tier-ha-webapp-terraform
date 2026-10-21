@@ -8,12 +8,33 @@ variable "project_name" {
   description = "Name prefix applied to all resources"
   type        = string
   default     = "ahmad-3tier"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{1,30}$", var.project_name))
+    error_message = "project_name must be lowercase alphanumeric/hyphens, 2-31 chars."
+  }
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+  default     = "dev"
+
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.environment)
+    error_message = "environment must be one of: dev, staging, prod."
+  }
 }
 
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
   type        = string
   default     = "10.0.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "vpc_cidr must be a valid IPv4 CIDR block."
+  }
 }
 
 variable "instance_type" {
@@ -59,14 +80,14 @@ variable "db_username" {
   sensitive   = true
 }
 
-variable "db_password" {
-  description = "Master password for RDS (pass via TF_VAR_db_password; never commit)"
-  type        = string
-  sensitive   = true
-}
-
 variable "db_multi_az" {
   description = "Enable RDS Multi-AZ for high availability"
   type        = bool
   default     = true
+}
+
+variable "certificate_arn" {
+  description = "Optional ACM certificate ARN to enable HTTPS on the ALB (leave empty for HTTP only)"
+  type        = string
+  default     = ""
 }
